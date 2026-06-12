@@ -1322,6 +1322,9 @@ void databasesCron(void) {
         }
     }
 
+    /* Incrementally scan the keyspace to collect dataset statistics. */
+    datasetScanCron();
+
     /* Start active defrag cycle or adjust defrag CPU if needed. */
     monitorActiveDefrag();
 

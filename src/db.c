@@ -2293,6 +2293,51 @@ unsigned long long dbScan(serverDb *db, unsigned long long cursor, kvstoreScanFu
     return kvstoreScan(db->keys, cursor, -1, -1, scan_cb, NULL, privdata);
 }
 
+/* Callback for the dataset stats cron scan. Counts each key by type. */
+static void datasetScanCallback(void *privdata, void *entry, int didx) {
+    UNUSED(didx);
+    datasetStats *stats = (datasetStats *)privdata;
+    robj *val = entry;
+    stats->key_count_by_type[val->type]++;
+}
+
+#define DATASET_SCAN_TIME_LIMIT_US 1000
+
+void datasetScanCron(void) {
+    datasetScanState *state = &server.dataset_scan;
+
+    if (!state->in_progress) {
+        state->in_progress = 1;
+        state->cursor = 0;
+        state->db_index = 0;
+        memset(&state->partial, 0, sizeof(state->partial));
+    }
+
+    monotime timer;
+    elapsedStart(&timer);
+    while (elapsedUs(timer) < DATASET_SCAN_TIME_LIMIT_US &&
+           state->db_index < server.dbnum) {
+        serverDb *db = server.db[state->db_index];
+        if (db == NULL || kvstoreSize(db->keys) == 0) {
+            state->db_index++;
+            state->cursor = 0;
+            continue;
+        }
+
+        state->cursor = kvstoreScan(db->keys, state->cursor, -1, -1,
+                                    datasetScanCallback, NULL, &state->partial);
+
+        if (state->cursor == 0) {
+            state->db_index++;
+        }
+    }
+
+    if (state->db_index >= server.dbnum) {
+        state->results = state->partial;
+        state->in_progress = 0;
+    }
+}
+
 /* -----------------------------------------------------------------------------
  * API to get key arguments from commands
  * ---------------------------------------------------------------------------*/

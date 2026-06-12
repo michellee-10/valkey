@@ -1592,6 +1592,19 @@ struct serverMemOverhead {
     } *db;
 };
 
+/* Dataset statistics collected via periodic cron scan. */
+typedef struct datasetStats {
+    long long key_count_by_type[OBJ_TYPE_MAX];
+} datasetStats;
+
+typedef struct datasetScanState {
+    unsigned long long cursor;
+    int db_index;
+    int in_progress;
+    datasetStats partial;
+    datasetStats results;
+} datasetScanState;
+
 /* Replication error behavior determines the replica behavior
  * when it receives an error over the replication stream. In
  * either case the error is logged. */
@@ -1886,6 +1899,7 @@ struct valkeyServer {
     long long stat_total_active_defrag_time;       /* Total time memory fragmentation over the limit, unit us */
     monotime stat_last_active_defrag_time;         /* Timestamp of current active defrag start */
     size_t stat_peak_memory;                       /* Max used memory record */
+    datasetScanState dataset_scan;                  /* Cron-driven dataset statistics scan state */
     long long stat_aof_rewrites;                   /* number of aof file rewrites performed */
     long long stat_aofrw_consecutive_failures;     /* The number of consecutive failures of aofrw */
     long long stat_rdb_saves;                      /* number of rdb saves performed */
@@ -3547,6 +3561,7 @@ robj *dbFindExpires(serverDb *db, sds key);
 robj *dbFindExpiresWithDictIndex(serverDb *db, sds key, int dict_index);
 unsigned long long dbSize(serverDb *db);
 unsigned long long dbScan(serverDb *db, unsigned long long cursor, kvstoreScanFunction scan_cb, void *privdata);
+void datasetScanCron(void);
 
 /* Set data type */
 robj *setTypeCreate(sds value, size_t size_hint);
