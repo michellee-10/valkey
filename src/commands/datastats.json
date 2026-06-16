@@ -1,0 +1,12 @@
+{
+    "DATASTATS": {
+        "summary": "A container for dataset statistics commands.",
+        "complexity": "Depends on subcommand.",
+        "group": "server",
+        "since": "10.0.0",
+        "arity": -2,
+        "acl_categories": [
+            "SLOW"
+        ]
+    }
+}

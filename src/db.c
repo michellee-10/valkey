@@ -1410,6 +1410,38 @@ void dbsizeCommand(client *c) {
     addReplyLongLong(c, kvstoreSize(c->db->keys));
 }
 
+void datastatsKeycountsCommand(client *c) {
+    datasetStats *results = &server.dataset_scan.results;
+    addReplyMapLen(c, OBJ_TYPE_MAX);
+    addReplyBulkCString(c, "string_count");
+    addReplyLongLong(c, results->key_count_by_type[OBJ_STRING]);
+    addReplyBulkCString(c, "list_count");
+    addReplyLongLong(c, results->key_count_by_type[OBJ_LIST]);
+    addReplyBulkCString(c, "set_count");
+    addReplyLongLong(c, results->key_count_by_type[OBJ_SET]);
+    addReplyBulkCString(c, "zset_count");
+    addReplyLongLong(c, results->key_count_by_type[OBJ_ZSET]);
+    addReplyBulkCString(c, "hash_count");
+    addReplyLongLong(c, results->key_count_by_type[OBJ_HASH]);
+    addReplyBulkCString(c, "module_count");
+    addReplyLongLong(c, results->key_count_by_type[OBJ_MODULE]);
+    addReplyBulkCString(c, "stream_count");
+    addReplyLongLong(c, results->key_count_by_type[OBJ_STREAM]);
+}
+
+void datastatsCommand(client *c) {
+    if (c->argc == 1) {
+        addReplyErrorArity(c);
+        return;
+    }
+
+    if (!strcasecmp(objectGetVal(c->argv[1]), "keycounts")) {
+        datastatsKeycountsCommand(c);
+    } else {
+        addReplySubcommandSyntaxError(c);
+    }
+}
+
 void lastsaveCommand(client *c) {
     addReplyLongLong(c, server.lastsave);
 }
