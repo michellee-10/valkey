@@ -1598,6 +1598,7 @@ struct serverMemOverhead {
 typedef struct datasetStats {
     long long key_count_by_type[OBJ_TYPE_MAX];
     long long key_count_by_encoding[OBJ_ENCODING_MAX];
+    long long memory_by_type[OBJ_TYPE_MAX];
 } datasetStats;
 
 typedef struct datasetScanState {
@@ -3165,6 +3166,7 @@ robj *tryObjectEncoding(robj *o);
 robj *tryObjectEncodingEx(robj *o, int try_trim);
 robj *getDecodedObject(robj *o);
 size_t stringObjectLen(robj *o);
+size_t objectComputeSize(robj *key, robj *o, size_t sample_size, int dbid);
 robj *createStringObjectFromLongLong(long long value);
 robj *createStringObjectFromLongLongForValue(long long value);
 robj *createStringObjectFromLongLongWithSds(long long value);

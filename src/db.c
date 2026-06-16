@@ -1458,6 +1458,25 @@ void datastatsEncodingsCommand(client *c) {
     addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_LISTPACK]);
 }
 
+void datastatsMemoryCommand(client *c) {
+    datasetStats *results = &server.dataset_scan.results;
+    addReplyMapLen(c, OBJ_TYPE_MAX);
+    addReplyBulkCString(c, "string_bytes");
+    addReplyLongLong(c, results->memory_by_type[OBJ_STRING]);
+    addReplyBulkCString(c, "list_bytes");
+    addReplyLongLong(c, results->memory_by_type[OBJ_LIST]);
+    addReplyBulkCString(c, "set_bytes");
+    addReplyLongLong(c, results->memory_by_type[OBJ_SET]);
+    addReplyBulkCString(c, "zset_bytes");
+    addReplyLongLong(c, results->memory_by_type[OBJ_ZSET]);
+    addReplyBulkCString(c, "hash_bytes");
+    addReplyLongLong(c, results->memory_by_type[OBJ_HASH]);
+    addReplyBulkCString(c, "module_bytes");
+    addReplyLongLong(c, results->memory_by_type[OBJ_MODULE]);
+    addReplyBulkCString(c, "stream_bytes");
+    addReplyLongLong(c, results->memory_by_type[OBJ_STREAM]);
+}
+
 void datastatsCommand(client *c) {
     if (c->argc == 1) {
         addReplyErrorArity(c);
@@ -1468,6 +1487,8 @@ void datastatsCommand(client *c) {
         datastatsKeycountsCommand(c);
     } else if (!strcasecmp(objectGetVal(c->argv[1]), "encodings")) {
         datastatsEncodingsCommand(c);
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "memory")) {
+        datastatsMemoryCommand(c);
     } else {
         addReplySubcommandSyntaxError(c);
     }
@@ -2356,13 +2377,25 @@ unsigned long long dbScan(serverDb *db, unsigned long long cursor, kvstoreScanFu
     return kvstoreScan(db->keys, cursor, -1, -1, scan_cb, NULL, privdata);
 }
 
+typedef struct {
+    datasetStats *stats;
+    int db_id;
+} datasetScanCtx;
+
 /* Callback for the dataset stats cron scan. Collects per-key metrics. */
 static void datasetScanCallback(void *privdata, void *entry, int didx) {
     UNUSED(didx);
-    datasetStats *stats = (datasetStats *)privdata;
+    datasetScanCtx *ctx = (datasetScanCtx *)privdata;
+    datasetStats *stats = ctx->stats;
     robj *val = entry;
     stats->key_count_by_type[val->type]++;
     stats->key_count_by_encoding[val->encoding]++;
+
+    robj keyobj;
+    initStaticStringObject(keyobj, objectGetKey(val));
+    size_t size = objectComputeSize(&keyobj, val, 5, ctx->db_id);
+    size += sdslen(objectGetKey(val));
+    stats->memory_by_type[val->type] += size;
 }
 
 #define DATASET_SCAN_TIME_LIMIT_US 1000
@@ -2377,6 +2410,11 @@ void datasetScanCron(void) {
         memset(&state->partial, 0, sizeof(state->partial));
     }
 
+    datasetScanCtx ctx = {
+        .stats = &state->partial,
+        .db_id = state->db_index,
+    };
+
     monotime timer;
     elapsedStart(&timer);
     while (elapsedUs(timer) < DATASET_SCAN_TIME_LIMIT_US &&
@@ -2384,15 +2422,17 @@ void datasetScanCron(void) {
         serverDb *db = server.db[state->db_index];
         if (db == NULL || kvstoreSize(db->keys) == 0) {
             state->db_index++;
+            ctx.db_id = state->db_index;
             state->cursor = 0;
             continue;
         }
 
         state->cursor = kvstoreScan(db->keys, state->cursor, -1, -1,
-                                    datasetScanCallback, NULL, &state->partial);
+                                    datasetScanCallback, NULL, &ctx);
 
         if (state->cursor == 0) {
             state->db_index++;
+            ctx.db_id = state->db_index;
         }
     }
 
