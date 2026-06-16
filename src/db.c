@@ -1429,6 +1429,35 @@ void datastatsKeycountsCommand(client *c) {
     addReplyLongLong(c, results->key_count_by_type[OBJ_STREAM]);
 }
 
+void datastatsEncodingsCommand(client *c) {
+    datasetStats *results = &server.dataset_scan.results;
+    addReplyMapLen(c, OBJ_ENCODING_MAX);
+    addReplyBulkCString(c, "raw");
+    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_RAW]);
+    addReplyBulkCString(c, "int");
+    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_INT]);
+    addReplyBulkCString(c, "hashtable");
+    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_HASHTABLE]);
+    addReplyBulkCString(c, "zipmap");
+    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_ZIPMAP]);
+    addReplyBulkCString(c, "linkedlist");
+    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_LINKEDLIST]);
+    addReplyBulkCString(c, "ziplist");
+    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_ZIPLIST]);
+    addReplyBulkCString(c, "intset");
+    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_INTSET]);
+    addReplyBulkCString(c, "skiplist");
+    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_SKIPLIST]);
+    addReplyBulkCString(c, "embstr");
+    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_EMBSTR]);
+    addReplyBulkCString(c, "quicklist");
+    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_QUICKLIST]);
+    addReplyBulkCString(c, "stream");
+    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_STREAM]);
+    addReplyBulkCString(c, "listpack");
+    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_LISTPACK]);
+}
+
 void datastatsCommand(client *c) {
     if (c->argc == 1) {
         addReplyErrorArity(c);
@@ -1437,6 +1466,8 @@ void datastatsCommand(client *c) {
 
     if (!strcasecmp(objectGetVal(c->argv[1]), "keycounts")) {
         datastatsKeycountsCommand(c);
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "encodings")) {
+        datastatsEncodingsCommand(c);
     } else {
         addReplySubcommandSyntaxError(c);
     }
@@ -2325,12 +2356,13 @@ unsigned long long dbScan(serverDb *db, unsigned long long cursor, kvstoreScanFu
     return kvstoreScan(db->keys, cursor, -1, -1, scan_cb, NULL, privdata);
 }
 
-/* Callback for the dataset stats cron scan. Counts each key by type. */
+/* Callback for the dataset stats cron scan. Collects per-key metrics. */
 static void datasetScanCallback(void *privdata, void *entry, int didx) {
     UNUSED(didx);
     datasetStats *stats = (datasetStats *)privdata;
     robj *val = entry;
     stats->key_count_by_type[val->type]++;
+    stats->key_count_by_encoding[val->encoding]++;
 }
 
 #define DATASET_SCAN_TIME_LIMIT_US 1000

@@ -1592,9 +1592,12 @@ struct serverMemOverhead {
     } *db;
 };
 
+#define OBJ_ENCODING_MAX 12
+
 /* Dataset statistics collected via periodic cron scan. */
 typedef struct datasetStats {
     long long key_count_by_type[OBJ_TYPE_MAX];
+    long long key_count_by_encoding[OBJ_ENCODING_MAX];
 } datasetStats;
 
 typedef struct datasetScanState {
