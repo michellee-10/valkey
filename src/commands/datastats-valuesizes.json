@@ -1,0 +1,33 @@
+{
+    "VALUESIZES": {
+        "summary": "Returns value size distribution from the last completed dataset scan.",
+        "complexity": "O(1)",
+        "group": "server",
+        "since": "10.0.0",
+        "arity": 2,
+        "container": "DATASTATS",
+        "function": "datastatsCommand",
+        "command_flags": [
+            "READONLY",
+            "FAST",
+            "SENTINEL"
+        ],
+        "acl_categories": [
+            "FAST",
+            "KEYSPACE",
+            "READ"
+        ],
+        "command_tips": [
+            "NONDETERMINISTIC_OUTPUT",
+            "REQUEST_POLICY:ALL_SHARDS",
+            "RESPONSE_POLICY:SPECIAL"
+        ],
+        "reply_schema": {
+            "type": "object",
+            "additionalProperties": {
+                "type": "integer"
+            },
+            "description": "A map of size bucket ranges to value counts in each bucket."
+        }
+    }
+}

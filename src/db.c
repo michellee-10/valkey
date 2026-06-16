@@ -1494,6 +1494,23 @@ void datastatsKeysizesCommand(client *c) {
     }
 }
 
+void datastatsValuesizesCommand(client *c) {
+    datasetStats *results = &server.dataset_scan.results;
+    addReplyMapLen(c, VALUESIZE_HISTOGRAM_BUCKETS);
+    size_t prev = 0;
+    for (int i = 0; i < VALUESIZE_HISTOGRAM_BUCKETS; i++) {
+        char label[32];
+        if (valuesize_bucket_boundaries[i] == SIZE_MAX) {
+            snprintf(label, sizeof(label), "%zuB-plus", prev);
+        } else {
+            snprintf(label, sizeof(label), "%zuB-%zuB", prev, valuesize_bucket_boundaries[i]);
+        }
+        addReplyBulkCString(c, label);
+        addReplyLongLong(c, results->value_size_histogram[i]);
+        prev = valuesize_bucket_boundaries[i];
+    }
+}
+
 void datastatsCommand(client *c) {
     if (c->argc == 1) {
         addReplyErrorArity(c);
@@ -1508,6 +1525,8 @@ void datastatsCommand(client *c) {
         datastatsMemoryCommand(c);
     } else if (!strcasecmp(objectGetVal(c->argv[1]), "keysizes")) {
         datastatsKeysizesCommand(c);
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "valuesizes")) {
+        datastatsValuesizesCommand(c);
     } else {
         addReplySubcommandSyntaxError(c);
     }
@@ -2408,6 +2427,13 @@ static int getKeysizeBucket(size_t len) {
     return KEYSIZE_HISTOGRAM_BUCKETS - 1;
 }
 
+static int getValuesizeBucket(size_t len) {
+    for (int i = 0; i < VALUESIZE_HISTOGRAM_BUCKETS; i++) {
+        if (len < valuesize_bucket_boundaries[i]) return i;
+    }
+    return VALUESIZE_HISTOGRAM_BUCKETS - 1;
+}
+
 /* Callback for the dataset stats cron scan. Collects per-key metrics. */
 static void datasetScanCallback(void *privdata, void *entry, int didx) {
     UNUSED(didx);
@@ -2422,9 +2448,9 @@ static void datasetScanCallback(void *privdata, void *entry, int didx) {
 
     robj keyobj;
     initStaticStringObject(keyobj, objectGetKey(val));
-    size_t size = objectComputeSize(&keyobj, val, 5, ctx->db_id);
-    size += key_len;
-    stats->memory_by_type[val->type] += size;
+    size_t val_size = objectComputeSize(&keyobj, val, 5, ctx->db_id);
+    stats->value_size_histogram[getValuesizeBucket(val_size)]++;
+    stats->memory_by_type[val->type] += val_size + key_len;
 }
 
 #define DATASET_SCAN_TIME_LIMIT_US 1000
