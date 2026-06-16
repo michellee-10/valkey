@@ -164,4 +164,144 @@ start_server {tags {"datastats"}} {
         assert_equal [dict get $stats list_count] 300
         assert_equal [dict get $stats hash_count] 200
     }
+
+    test {DATASTATS ENCODINGS tracks multiple encodings simultaneously} {
+        r flushall
+        r config set hash-max-listpack-entries 5
+        r config set set-max-intset-entries 5
+        r config set set-max-listpack-entries 5
+        r config set zset-max-listpack-entries 5
+        r config set list-max-listpack-size 5
+        # Strings: int, embstr, raw
+        r set num_key 12345
+        r set short_str "hi"
+        r set long_str [string repeat "x" 200]
+        # Hash: small (listpack) and large (hashtable)
+        r hset small_hash f1 v1
+        r hset big_hash f1 v1 f2 v2 f3 v3 f4 v4 f5 v5 f6 v6
+        # Set: small int-only (intset), large int-only (listpack), small string (listpack), large string (hashtable)
+        r sadd small_int_set 1 2 3
+        r sadd big_int_set 1 2 3 4 5 6
+        r sadd small_set "a" "b" "c"
+        r sadd big_set a b c d e f
+        # ZSet: small (listpack) and large (skiplist)
+        r zadd small_zset 1 a
+        r zadd big_zset 1 a 2 b 3 c 4 d 5 e 6 f
+        # List: small (listpack) and large (quicklist)
+        r lpush small_list a
+        r lpush big_list a b c d e [string repeat "x" 200]
+        # Stream
+        r xadd my_stream "*" f v
+        wait_for_datastats_update
+        set stats [r datastats encodings]
+        assert_equal [dict get $stats int] 1
+        assert_equal [dict get $stats embstr] 1
+        assert_equal [dict get $stats raw] 1
+        assert_equal [dict get $stats listpack] 4
+        assert_equal [dict get $stats hashtable] 3
+        assert_equal [dict get $stats intset] 1
+        assert_equal [dict get $stats skiplist] 1
+        assert_equal [dict get $stats quicklist] 1
+        assert_equal [dict get $stats stream] 1
+    }
+
+    test {DATASTATS ENCODINGS reflects encoding conversions} {
+        r flushall
+        r config set hash-max-listpack-entries 10
+        r config set set-max-intset-entries 10
+        r config set zset-max-listpack-entries 10
+        r config set list-max-listpack-size 1
+        # Create keys with compact encodings
+        r hset my_hash f1 v1
+        r sadd my_set 1 2 3
+        r zadd my_zset 1 a
+        r lpush my_list "short"
+        wait_for_datastats_update
+        set stats [r datastats encodings]
+        assert_equal [dict get $stats listpack] 3
+        assert_equal [dict get $stats intset] 1
+        assert_equal [dict get $stats hashtable] 0
+        assert_equal [dict get $stats skiplist] 0
+        assert_equal [dict get $stats quicklist] 0
+
+        # Force conversions by exceeding thresholds
+        for {set i 0} {$i < 20} {incr i} {
+            r hset my_hash "field_$i" "value_$i"
+        }
+        for {set i 0} {$i < 20} {incr i} {
+            r zadd my_zset $i "member_$i"
+        }
+        # Adding a string to intset forces conversion to listpack
+        r sadd my_set "not_an_integer"
+        # Adding large elements forces quicklist
+        for {set i 0} {$i < 10} {incr i} {
+            r lpush my_list [string repeat "x" 200]
+        }
+        wait_for_datastats_update
+        set stats [r datastats encodings]
+        assert_equal [dict get $stats hashtable] 1
+        assert_equal [dict get $stats skiplist] 1
+        assert_equal [dict get $stats quicklist] 1
+        assert_equal [dict get $stats listpack] 1
+        assert_equal [dict get $stats intset] 0
+    }
+
+    test {DATASTATS ENCODINGS total consistent with DBSIZE} {
+        r flushall
+        r set s1 v
+        r set s2 12345
+        r lpush l1 a b c
+        r sadd set1 1 2 3
+        r hset h1 f v
+        r xadd stream1 "*" f v
+        wait_for_datastats_update
+        set stats [r datastats encodings]
+        set total 0
+        dict for {enc count} $stats {
+            incr total $count
+        }
+        assert_equal $total [r dbsize]
+    }
+
+    test {DATASTATS ENCODINGS reflects deletion} {
+        r flushall
+        r config set hash-max-listpack-entries 1
+        # Create keys with known encodings
+        r set my_str "hello"
+        r hset my_hash f1 v1 f2 v2
+        r sadd my_set 1 2 3
+        wait_for_datastats_update
+        set stats [r datastats encodings]
+        assert_equal [dict get $stats embstr] 1
+        assert_equal [dict get $stats hashtable] 1
+        assert_equal [dict get $stats intset] 1
+
+        # Delete them
+        r del my_str
+        r del my_hash
+        wait_for_datastats_update
+        set stats [r datastats encodings]
+        assert_equal [dict get $stats embstr] 0
+        assert_equal [dict get $stats hashtable] 0
+        assert_equal [dict get $stats intset] 1
+    }
+
+    test {DATASTATS ENCODINGS conversion is one-way} {
+        r flushall
+        r config set hash-max-listpack-entries 5
+        # Create a hash that exceeds listpack threshold
+        r hset my_hash f1 v1 f2 v2 f3 v3 f4 v4 f5 v5 f6 v6
+        wait_for_datastats_update
+        set stats [r datastats encodings]
+        assert_equal [dict get $stats hashtable] 1
+        assert_equal [dict get $stats listpack] 0
+
+        # Remove fields so it's back under the threshold
+        r hdel my_hash f2 f3 f4 f5 f6
+        wait_for_datastats_update
+        set stats [r datastats encodings]
+        # Still hashtable — encoding does not downgrade
+        assert_equal [dict get $stats hashtable] 1
+        assert_equal [dict get $stats listpack] 0
+    }
 }
