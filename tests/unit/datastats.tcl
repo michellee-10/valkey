@@ -430,4 +430,58 @@ start_server {tags {"datastats"}} {
         assert_equal [dict get $stats 0B-16B] 0
         assert_equal [dict get $stats 16B-64B] 1
     }
+
+    test {DATASTATS VALUESIZES buckets values correctly} {
+        r flushall
+        r set tiny "hi"
+        r set medium [string repeat "x" 500]
+        r set large [string repeat "y" 100000]
+        wait_for_datastats_update
+        set stats [r datastats valuesizes]
+        assert_equal [dict get $stats 0B-64B] 1
+        assert_equal [dict get $stats 64B-1024B] 1
+        assert_equal [dict get $stats 16384B-262144B] 1
+    }
+
+    test {DATASTATS VALUESIZES total consistent with DBSIZE} {
+        r flushall
+        r set s1 "small"
+        r set s2 [string repeat "a" 300]
+        r set s3 [string repeat "b" 5000]
+        wait_for_datastats_update
+        set stats [r datastats valuesizes]
+        set total 0
+        dict for {bucket count} $stats {
+            incr total $count
+        }
+        assert_equal $total [r dbsize]
+    }
+
+    test {DATASTATS VALUESIZES reflects value update} {
+        r flushall
+        r set mykey "small"
+        wait_for_datastats_update
+        set stats [r datastats valuesizes]
+        assert_equal [dict get $stats 0B-64B] 1
+        assert_equal [dict get $stats 16384B-262144B] 0
+
+        r set mykey [string repeat "x" 100000]
+        wait_for_datastats_update
+        set stats [r datastats valuesizes]
+        assert_equal [dict get $stats 0B-64B] 0
+        assert_equal [dict get $stats 16384B-262144B] 1
+    }
+
+    test {DATASTATS VALUESIZES reflects deletion} {
+        r flushall
+        r set mykey [string repeat "x" 500]
+        wait_for_datastats_update
+        set stats [r datastats valuesizes]
+        assert_equal [dict get $stats 64B-1024B] 1
+
+        r del mykey
+        wait_for_datastats_update
+        set stats [r datastats valuesizes]
+        assert_equal [dict get $stats 64B-1024B] 0
+    }
 }
