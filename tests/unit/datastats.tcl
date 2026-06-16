@@ -304,4 +304,83 @@ start_server {tags {"datastats"}} {
         assert_equal [dict get $stats hashtable] 1
         assert_equal [dict get $stats listpack] 0
     }
+
+    test {DATASTATS MEMORY reports non-zero for each type} {
+        r flushall
+        r set mystr "hello world"
+        r lpush mylist a b c
+        r sadd myset x y z
+        r zadd myzset 1 a 2 b
+        r hset myhash f1 v1 f2 v2
+        r xadd mystream "*" field value
+        wait_for_datastats_update
+        set stats [r datastats memory]
+        assert {[dict get $stats string_bytes] > 0}
+        assert {[dict get $stats list_bytes] > 0}
+        assert {[dict get $stats set_bytes] > 0}
+        assert {[dict get $stats zset_bytes] > 0}
+        assert {[dict get $stats hash_bytes] > 0}
+        assert {[dict get $stats stream_bytes] > 0}
+    }
+
+    test {DATASTATS MEMORY larger values use more memory} {
+        r flushall
+        r set small_str "hi"
+        wait_for_datastats_update
+        set stats_before [r datastats memory]
+        set small_mem [dict get $stats_before string_bytes]
+
+        r flushall
+        r set big_str [string repeat "x" 10000]
+        wait_for_datastats_update
+        set stats_after [r datastats memory]
+        set big_mem [dict get $stats_after string_bytes]
+
+        assert {$big_mem > $small_mem}
+    }
+
+    test {DATASTATS MEMORY reflects deletion} {
+        r flushall
+        r set key1 "some value"
+        r set key2 "another value"
+        wait_for_datastats_update
+        set stats [r datastats memory]
+        set mem_before [dict get $stats string_bytes]
+        assert {$mem_before > 0}
+
+        r del key1 key2
+        wait_for_datastats_update
+        set stats [r datastats memory]
+        assert_equal [dict get $stats string_bytes] 0
+    }
+
+    test {DATASTATS MEMORY reflects value update on same key} {
+        r flushall
+        r set mykey "small"
+        wait_for_datastats_update
+        set stats [r datastats memory]
+        set mem_before [dict get $stats string_bytes]
+
+        r set mykey [string repeat "x" 10000]
+        wait_for_datastats_update
+        set stats [r datastats memory]
+        set mem_after [dict get $stats string_bytes]
+
+        assert {$mem_after > $mem_before}
+    }
+
+    test {DATASTATS MEMORY reflects type change on overwrite} {
+        r flushall
+        r sadd mykey a b c
+        wait_for_datastats_update
+        set stats [r datastats memory]
+        assert {[dict get $stats set_bytes] > 0}
+        assert_equal [dict get $stats string_bytes] 0
+
+        r set mykey "now a string"
+        wait_for_datastats_update
+        set stats [r datastats memory]
+        assert_equal [dict get $stats set_bytes] 0
+        assert {[dict get $stats string_bytes] > 0}
+    }
 }
