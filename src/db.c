@@ -1477,6 +1477,23 @@ void datastatsMemoryCommand(client *c) {
     addReplyLongLong(c, results->memory_by_type[OBJ_STREAM]);
 }
 
+void datastatsKeysizesCommand(client *c) {
+    datasetStats *results = &server.dataset_scan.results;
+    addReplyMapLen(c, KEYSIZE_HISTOGRAM_BUCKETS);
+    size_t prev = 0;
+    for (int i = 0; i < KEYSIZE_HISTOGRAM_BUCKETS; i++) {
+        char label[32];
+        if (keysize_bucket_boundaries[i] == SIZE_MAX) {
+            snprintf(label, sizeof(label), "%zuB-plus", prev);
+        } else {
+            snprintf(label, sizeof(label), "%zuB-%zuB", prev, keysize_bucket_boundaries[i]);
+        }
+        addReplyBulkCString(c, label);
+        addReplyLongLong(c, results->key_size_histogram[i]);
+        prev = keysize_bucket_boundaries[i];
+    }
+}
+
 void datastatsCommand(client *c) {
     if (c->argc == 1) {
         addReplyErrorArity(c);
@@ -1489,6 +1506,8 @@ void datastatsCommand(client *c) {
         datastatsEncodingsCommand(c);
     } else if (!strcasecmp(objectGetVal(c->argv[1]), "memory")) {
         datastatsMemoryCommand(c);
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "keysizes")) {
+        datastatsKeysizesCommand(c);
     } else {
         addReplySubcommandSyntaxError(c);
     }
@@ -2382,6 +2401,13 @@ typedef struct {
     int db_id;
 } datasetScanCtx;
 
+static int getKeysizeBucket(size_t len) {
+    for (int i = 0; i < KEYSIZE_HISTOGRAM_BUCKETS; i++) {
+        if (len < keysize_bucket_boundaries[i]) return i;
+    }
+    return KEYSIZE_HISTOGRAM_BUCKETS - 1;
+}
+
 /* Callback for the dataset stats cron scan. Collects per-key metrics. */
 static void datasetScanCallback(void *privdata, void *entry, int didx) {
     UNUSED(didx);
@@ -2391,10 +2417,13 @@ static void datasetScanCallback(void *privdata, void *entry, int didx) {
     stats->key_count_by_type[val->type]++;
     stats->key_count_by_encoding[val->encoding]++;
 
+    size_t key_len = sdslen(objectGetKey(val));
+    stats->key_size_histogram[getKeysizeBucket(key_len)]++;
+
     robj keyobj;
     initStaticStringObject(keyobj, objectGetKey(val));
     size_t size = objectComputeSize(&keyobj, val, 5, ctx->db_id);
-    size += sdslen(objectGetKey(val));
+    size += key_len;
     stats->memory_by_type[val->type] += size;
 }
 

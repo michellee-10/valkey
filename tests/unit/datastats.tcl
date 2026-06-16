@@ -383,4 +383,51 @@ start_server {tags {"datastats"}} {
         assert_equal [dict get $stats set_bytes] 0
         assert {[dict get $stats string_bytes] > 0}
     }
+
+    test {DATASTATS KEYSIZES buckets keys correctly} {
+        r flushall
+        r set short val
+        r set [string repeat "k" 20] val
+        r set [string repeat "m" 100] val
+        r set [string repeat "z" 5000] val
+        wait_for_datastats_update
+        set stats [r datastats keysizes]
+        assert_equal [dict get $stats 0B-16B] 1
+        assert_equal [dict get $stats 16B-64B] 1
+        assert_equal [dict get $stats 64B-256B] 1
+        assert_equal [dict get $stats 256B-1024B] 0
+        assert_equal [dict get $stats 1024B-4096B] 0
+        assert_equal [dict get $stats 4096B-plus] 1
+    }
+
+    test {DATASTATS KEYSIZES total consistent with DBSIZE} {
+        r flushall
+        r set tiny val
+        r set [string repeat "x" 30] val
+        r set [string repeat "y" 100] val
+        r set [string repeat "z" 500] val
+        wait_for_datastats_update
+        set stats [r datastats keysizes]
+        set total 0
+        dict for {bucket count} $stats {
+            incr total $count
+        }
+        assert_equal $total [r dbsize]
+    }
+
+    test {DATASTATS KEYSIZES reflects deletion} {
+        r flushall
+        r set short val
+        r set [string repeat "k" 20] val
+        wait_for_datastats_update
+        set stats [r datastats keysizes]
+        assert_equal [dict get $stats 0B-16B] 1
+        assert_equal [dict get $stats 16B-64B] 1
+
+        r del short
+        wait_for_datastats_update
+        set stats [r datastats keysizes]
+        assert_equal [dict get $stats 0B-16B] 0
+        assert_equal [dict get $stats 16B-64B] 1
+    }
 }

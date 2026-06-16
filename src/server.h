@@ -1594,11 +1594,17 @@ struct serverMemOverhead {
 
 #define OBJ_ENCODING_MAX 12
 
+#define KEYSIZE_HISTOGRAM_BUCKETS 6
+static const size_t keysize_bucket_boundaries[KEYSIZE_HISTOGRAM_BUCKETS] = {
+    16, 64, 256, 1024, 4096, SIZE_MAX
+};
+
 /* Dataset statistics collected via periodic cron scan. */
 typedef struct datasetStats {
     long long key_count_by_type[OBJ_TYPE_MAX];
     long long key_count_by_encoding[OBJ_ENCODING_MAX];
     long long memory_by_type[OBJ_TYPE_MAX];
+    long long key_size_histogram[KEYSIZE_HISTOGRAM_BUCKETS];
 } datasetStats;
 
 typedef struct datasetScanState {
