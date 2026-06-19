@@ -1511,6 +1511,20 @@ void datastatsValuesizesCommand(client *c) {
     }
 }
 
+void datastatsAllCommand(client *c) {
+    addReplyMapLen(c, 5);
+    addReplyBulkCString(c, "keycounts");
+    datastatsKeycountsCommand(c);
+    addReplyBulkCString(c, "encodings");
+    datastatsEncodingsCommand(c);
+    addReplyBulkCString(c, "memory");
+    datastatsMemoryCommand(c);
+    addReplyBulkCString(c, "keysizes");
+    datastatsKeysizesCommand(c);
+    addReplyBulkCString(c, "valuesizes");
+    datastatsValuesizesCommand(c);
+}
+
 void datastatsCommand(client *c) {
     if (c->argc == 1) {
         addReplyErrorArity(c);
@@ -1527,6 +1541,8 @@ void datastatsCommand(client *c) {
         datastatsKeysizesCommand(c);
     } else if (!strcasecmp(objectGetVal(c->argv[1]), "valuesizes")) {
         datastatsValuesizesCommand(c);
+    } else if (!strcasecmp(objectGetVal(c->argv[1]), "all")) {
+        datastatsAllCommand(c);
     } else {
         addReplySubcommandSyntaxError(c);
     }

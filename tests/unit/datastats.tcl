@@ -484,4 +484,46 @@ start_server {tags {"datastats"}} {
         set stats [r datastats valuesizes]
         assert_equal [dict get $stats 64B-1024B] 0
     }
+
+    test {DATASTATS ALL returns all sections} {
+        r flushall
+        r set mystr "hello"
+        r lpush mylist a b c
+        r sadd myset x y z
+        wait_for_datastats_update
+        set stats [r datastats all]
+        assert {[dict exists $stats keycounts]}
+        assert {[dict exists $stats encodings]}
+        assert {[dict exists $stats memory]}
+        assert {[dict exists $stats keysizes]}
+        assert {[dict exists $stats valuesizes]}
+        set keycounts [dict get $stats keycounts]
+        assert_equal [dict get $keycounts string_count] 1
+        assert_equal [dict get $keycounts list_count] 1
+        assert_equal [dict get $keycounts set_count] 1
+        set memory [dict get $stats memory]
+        assert {[dict get $memory string_bytes] > 0}
+        assert {[dict get $memory list_bytes] > 0}
+        assert {[dict get $memory set_bytes] > 0}
+    }
+
+    test {DATASTATS ALL consistent with individual subcommands} {
+        r flushall
+        r set s1 "val"
+        r set s2 12345
+        r lpush l1 a b c
+        r hset h1 f v
+        wait_for_datastats_update
+        set all [r datastats all]
+        set keycounts [r datastats keycounts]
+        set encodings [r datastats encodings]
+        set memory [r datastats memory]
+        set keysizes [r datastats keysizes]
+        set valuesizes [r datastats valuesizes]
+        assert_equal [dict get $all keycounts] $keycounts
+        assert_equal [dict get $all encodings] $encodings
+        assert_equal [dict get $all memory] $memory
+        assert_equal [dict get $all keysizes] $keysizes
+        assert_equal [dict get $all valuesizes] $valuesizes
+    }
 }
