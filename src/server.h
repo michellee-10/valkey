@@ -1617,6 +1617,7 @@ typedef struct datasetScanState {
     unsigned long long cursor;
     int db_index;
     int in_progress;
+    int cooldown_remaining;
     datasetStats partial;
     datasetStats results;
 } datasetScanState;

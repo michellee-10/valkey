@@ -2470,9 +2470,15 @@ static void datasetScanCallback(void *privdata, void *entry, int didx) {
 }
 
 #define DATASET_SCAN_TIME_LIMIT_US 1000
+#define DATASET_SCAN_COOLDOWN_TICKS 10
 
 void datasetScanCron(void) {
     datasetScanState *state = &server.dataset_scan;
+
+    if (state->cooldown_remaining > 0) {
+        state->cooldown_remaining--;
+        return;
+    }
 
     if (!state->in_progress) {
         state->in_progress = 1;
@@ -2510,6 +2516,7 @@ void datasetScanCron(void) {
     if (state->db_index >= server.dbnum) {
         state->results = state->partial;
         state->in_progress = 0;
+        state->cooldown_remaining = DATASET_SCAN_COOLDOWN_TICKS;
     }
 }
 
