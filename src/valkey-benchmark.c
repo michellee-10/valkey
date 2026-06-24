@@ -2627,7 +2627,7 @@ int main(int argc, char **argv) {
         }
 
         if (test_is_selected("hset")) {
-            len = valkeyFormatCommand(&cmd, "HSET hash%s:__rand_int__ field:__rand_int__ %s", tag, data);
+            len = valkeyFormatCommand(&cmd, "HSET hash%s:__rand_int__ field %s", tag, data);
             benchmark("HSET", cmd, len);
             free(cmd);
         }
