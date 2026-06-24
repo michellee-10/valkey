@@ -2508,6 +2508,7 @@ void datasetScanCron(void) {
     }
 
     if (state->db_index >= server.dbnum) {
+        serverLog(LL_NOTICE, "DATASTATS scan complete");
         state->results = state->partial;
         state->in_progress = 0;
     }
