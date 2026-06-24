@@ -2597,13 +2597,13 @@ int main(int argc, char **argv) {
         }
 
         if (test_is_selected("lpush")) {
-            len = valkeyFormatCommand(&cmd, "LPUSH mylist%s %s", tag, data);
+            len = valkeyFormatCommand(&cmd, "LPUSH list%s:__rand_int__ %s", tag, data);
             benchmark("LPUSH", cmd, len);
             free(cmd);
         }
 
         if (test_is_selected("rpush")) {
-            len = valkeyFormatCommand(&cmd, "RPUSH mylist%s %s", tag, data);
+            len = valkeyFormatCommand(&cmd, "RPUSH list%s:__rand_int__ %s", tag, data);
             benchmark("RPUSH", cmd, len);
             free(cmd);
         }
@@ -2621,13 +2621,13 @@ int main(int argc, char **argv) {
         }
 
         if (test_is_selected("sadd")) {
-            len = valkeyFormatCommand(&cmd, "SADD myset%s element:__rand_int__", tag);
+            len = valkeyFormatCommand(&cmd, "SADD set%s:__rand_int__ %s", tag, data);
             benchmark("SADD", cmd, len);
             free(cmd);
         }
 
         if (test_is_selected("hset")) {
-            len = valkeyFormatCommand(&cmd, "HSET myhash%s element:__rand_int__ %s", tag, data);
+            len = valkeyFormatCommand(&cmd, "HSET hash%s:__rand_int__ field:__rand_int__ %s", tag, data);
             benchmark("HSET", cmd, len);
             free(cmd);
         }
@@ -2641,7 +2641,7 @@ int main(int argc, char **argv) {
         if (test_is_selected("zadd")) {
             char *score = "0";
             if (config.replace_placeholders) score = "__rand_int__";
-            len = valkeyFormatCommand(&cmd, "ZADD myzset%s %s element:__rand_1st__", tag, score);
+            len = valkeyFormatCommand(&cmd, "ZADD zset%s:__rand_int__ %s %s", tag, score, data);
             benchmark("ZADD", cmd, len);
             free(cmd);
         }

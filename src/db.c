@@ -2508,7 +2508,17 @@ void datasetScanCron(void) {
     }
 
     if (state->db_index >= server.dbnum) {
-        serverLog(LL_NOTICE, "DATASTATS scan complete");
+        serverLog(LL_NOTICE,
+            "DATASTATS scan complete: raw=%lld int=%lld ht=%lld intset=%lld skiplist=%lld embstr=%lld quicklist=%lld stream=%lld listpack=%lld",
+            state->partial.key_count_by_encoding[OBJ_ENCODING_RAW],
+            state->partial.key_count_by_encoding[OBJ_ENCODING_INT],
+            state->partial.key_count_by_encoding[OBJ_ENCODING_HASHTABLE],
+            state->partial.key_count_by_encoding[OBJ_ENCODING_INTSET],
+            state->partial.key_count_by_encoding[OBJ_ENCODING_SKIPLIST],
+            state->partial.key_count_by_encoding[OBJ_ENCODING_EMBSTR],
+            state->partial.key_count_by_encoding[OBJ_ENCODING_QUICKLIST],
+            state->partial.key_count_by_encoding[OBJ_ENCODING_STREAM],
+            state->partial.key_count_by_encoding[OBJ_ENCODING_LISTPACK]);
         state->results = state->partial;
         state->in_progress = 0;
     }
