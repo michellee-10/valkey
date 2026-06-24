@@ -2711,7 +2711,7 @@ int main(int argc, char **argv) {
         }
 
         if (test_is_selected("xadd")) {
-            len = valkeyFormatCommand(&cmd, "XADD mystream%s * myfield %s", tag, data);
+            len = valkeyFormatCommand(&cmd, "XADD stream%s:__rand_int__ * myfield %s", tag, data);
             benchmark("XADD", cmd, len);
             free(cmd);
         }
