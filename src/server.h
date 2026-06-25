@@ -1595,14 +1595,7 @@ struct serverMemOverhead {
 #define OBJ_ENCODING_MAX 12
 
 #define KEYSIZE_HISTOGRAM_BUCKETS 6
-static const size_t keysize_bucket_boundaries[KEYSIZE_HISTOGRAM_BUCKETS] = {
-    16, 64, 256, 1024, 4096, SIZE_MAX
-};
-
 #define VALUESIZE_HISTOGRAM_BUCKETS 6
-static const size_t valuesize_bucket_boundaries[VALUESIZE_HISTOGRAM_BUCKETS] = {
-    64, 1024, 16384, 262144, 4194304, SIZE_MAX
-};
 
 /* Dataset statistics collected via periodic cron scan. */
 typedef struct datasetStats {
@@ -1915,7 +1908,7 @@ struct valkeyServer {
     long long stat_total_active_defrag_time;       /* Total time memory fragmentation over the limit, unit us */
     monotime stat_last_active_defrag_time;         /* Timestamp of current active defrag start */
     size_t stat_peak_memory;                       /* Max used memory record */
-    datasetScanState dataset_scan;                  /* Cron-driven dataset statistics scan state */
+    datasetScanState dataset_scan;                 /* Cron-driven dataset statistics scan state */
     long long stat_aof_rewrites;                   /* number of aof file rewrites performed */
     long long stat_aofrw_consecutive_failures;     /* The number of consecutive failures of aofrw */
     long long stat_rdb_saves;                      /* number of rdb saves performed */

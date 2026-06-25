@@ -1410,6 +1410,9 @@ void dbsizeCommand(client *c) {
     addReplyLongLong(c, kvstoreSize(c->db->keys));
 }
 
+static const size_t keysize_bucket_boundaries[KEYSIZE_HISTOGRAM_BUCKETS] = {16, 64, 256, 1024, 4096, SIZE_MAX};
+static const size_t valuesize_bucket_boundaries[VALUESIZE_HISTOGRAM_BUCKETS] = {64, 1024, 16384, 262144, 4194304, SIZE_MAX};
+
 void datastatsKeycountsCommand(client *c) {
     datasetStats *results = &server.dataset_scan.results;
     addReplyMapLen(c, OBJ_TYPE_MAX);
