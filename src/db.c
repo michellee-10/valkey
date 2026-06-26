@@ -2473,9 +2473,15 @@ static void datasetScanCallback(void *privdata, void *entry, int didx) {
 }
 
 #define DATASET_SCAN_TIME_LIMIT_US 1000
+#define DATASET_SCAN_COOLDOWN_TICKS 10
 
 void datasetScanCron(void) {
     datasetScanState *state = &server.dataset_scan;
+
+    if (state->cooldown_remaining > 0) {
+        state->cooldown_remaining--;
+        return;
+    }
 
     if (!state->in_progress) {
         state->in_progress = 1;
@@ -2511,8 +2517,20 @@ void datasetScanCron(void) {
     }
 
     if (state->db_index >= server.dbnum) {
+        serverLog(LL_NOTICE,
+                  "DATASTATS scan complete: raw=%lld int=%lld ht=%lld intset=%lld skiplist=%lld embstr=%lld quicklist=%lld stream=%lld listpack=%lld",
+                  state->partial.key_count_by_encoding[OBJ_ENCODING_RAW],
+                  state->partial.key_count_by_encoding[OBJ_ENCODING_INT],
+                  state->partial.key_count_by_encoding[OBJ_ENCODING_HASHTABLE],
+                  state->partial.key_count_by_encoding[OBJ_ENCODING_INTSET],
+                  state->partial.key_count_by_encoding[OBJ_ENCODING_SKIPLIST],
+                  state->partial.key_count_by_encoding[OBJ_ENCODING_EMBSTR],
+                  state->partial.key_count_by_encoding[OBJ_ENCODING_QUICKLIST],
+                  state->partial.key_count_by_encoding[OBJ_ENCODING_STREAM],
+                  state->partial.key_count_by_encoding[OBJ_ENCODING_LISTPACK]);
         state->results = state->partial;
         state->in_progress = 0;
+        state->cooldown_remaining = DATASET_SCAN_COOLDOWN_TICKS;
     }
 }
 

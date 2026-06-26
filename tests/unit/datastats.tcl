@@ -1,7 +1,8 @@
 start_server {tags {"datastats"}} {
-    # Wait for the cron scan to complete at least one full pass.
+    # Wait for a full scan cycle (scan + cooldown) to complete.
+    # At 10Hz with 10-tick cooldown, one cycle is ~1.1s.
     proc wait_for_datastats_update {} {
-        after 500
+        after 2500
     }
 
     test {DATASTATS KEYCOUNTS returns zero counts on empty database} {
@@ -86,12 +87,12 @@ start_server {tags {"datastats"}} {
     test {DATASTATS KEYCOUNTS reflects key expiry} {
         r flushall
         r set mykey val
-        r pexpire mykey 1500
+        r pexpire mykey 5000
         wait_for_datastats_update
         set stats [r datastats keycounts]
         assert_equal [dict get $stats string_count] 1
 
-        after 1600
+        after 5100
         # Access to trigger lazy expire
         r get mykey
         wait_for_datastats_update
@@ -158,7 +159,7 @@ start_server {tags {"datastats"}} {
             r hset "hash_$i" f v
         }
         # Give the scan more time to complete on a larger dataset
-        after 2000
+        after 5000
         set stats [r datastats keycounts]
         assert_equal [dict get $stats string_count] 500
         assert_equal [dict get $stats list_count] 300
