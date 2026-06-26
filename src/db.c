@@ -2479,6 +2479,7 @@ void datasetScanCron(void) {
     datasetScanState *state = &server.dataset_scan;
 
     if (state->cooldown_remaining > 0) {
+        serverLog(LL_NOTICE, "DATASTATS cooldown: %d ticks remaining", state->cooldown_remaining);
         state->cooldown_remaining--;
         return;
     }
