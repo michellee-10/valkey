@@ -341,14 +341,14 @@ start_server {tags {"datastats"}} {
 
     test {DATASTATS MEMORY reflects deletion} {
         r flushall
-        r set key1 "some value"
-        r set key2 "another value"
+        r set "key1{t}" "some value"
+        r set "key2{t}" "another value"
         wait_for_datastats_update
         set stats [r datastats memory]
         set mem_before [dict get $stats string_bytes]
         assert {$mem_before > 0}
 
-        r del key1 key2
+        r del "key1{t}" "key2{t}"
         wait_for_datastats_update
         set stats [r datastats memory]
         assert_equal [dict get $stats string_bytes] 0
@@ -526,4 +526,10 @@ start_server {tags {"datastats"}} {
         assert_equal [dict get $all keysizes] $keysizes
         assert_equal [dict get $all valuesizes] $valuesizes
     }
+
+    r config set hash-max-listpack-entries 512
+    r config set set-max-intset-entries 512
+    r config set set-max-listpack-entries 128
+    r config set zset-max-listpack-entries 128
+    r config set list-max-listpack-size -2
 }
