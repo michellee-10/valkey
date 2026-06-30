@@ -2533,6 +2533,7 @@ void datasetScanCron(void) {
         state->results = state->partial;
         state->in_progress = 0;
         state->cooldown_remaining = state->scan_ticks * 2;
+        serverLog(LL_DEBUG, "DATASTATS scan cooldown: %d ticks", state->cooldown_remaining);
     }
 }
 
