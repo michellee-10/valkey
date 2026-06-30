@@ -2473,13 +2473,11 @@ static void datasetScanCallback(void *privdata, void *entry, int didx) {
 }
 
 #define DATASET_SCAN_TIME_LIMIT_US 1000
-#define DATASET_SCAN_COOLDOWN_TICKS 10
 
 void datasetScanCron(void) {
     datasetScanState *state = &server.dataset_scan;
 
     if (state->cooldown_remaining > 0) {
-        serverLog(LL_NOTICE, "DATASTATS cooldown: %d ticks remaining", state->cooldown_remaining);
         state->cooldown_remaining--;
         return;
     }
@@ -2488,8 +2486,11 @@ void datasetScanCron(void) {
         state->in_progress = 1;
         state->cursor = 0;
         state->db_index = 0;
+        state->scan_ticks = 0;
         memset(&state->partial, 0, sizeof(state->partial));
     }
+
+    state->scan_ticks++;
 
     datasetScanCtx ctx = {
         .stats = &state->partial,
@@ -2531,7 +2532,7 @@ void datasetScanCron(void) {
                   state->partial.key_count_by_encoding[OBJ_ENCODING_LISTPACK]);
         state->results = state->partial;
         state->in_progress = 0;
-        state->cooldown_remaining = DATASET_SCAN_COOLDOWN_TICKS;
+        state->cooldown_remaining = state->scan_ticks * 2;
     }
 }
 
