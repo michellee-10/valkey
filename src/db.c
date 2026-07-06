@@ -1410,139 +1410,75 @@ void dbsizeCommand(client *c) {
     addReplyLongLong(c, kvstoreSize(c->db->keys));
 }
 
-void datastatsKeycountsCommand(client *c) {
-    datasetStats *results = &server.dataset_scan.results;
+static const char *keysize_bucket_labels[KEYSIZE_HISTOGRAM_BUCKETS] = {
+    "0B-16B", "16B-64B", "64B-256B", "256B-1024B", "1024B-4096B", "4096B-plus"};
+static const char *valuesize_bucket_labels[VALUESIZE_HISTOGRAM_BUCKETS] = {
+    "0B-64B", "64B-1024B", "1024B-16384B", "16384B-262144B", "262144B-4194304B", "4194304B-plus"};
+
+static const char *datastats_type_names[OBJ_TYPE_MAX] = {
+    "string", "list", "set", "zset", "hash", "module", "stream"};
+
+static const char *datastats_encoding_names[OBJ_ENCODING_MAX] = {
+    "raw", "int", "hashtable", "zipmap", "linkedlist",
+    "ziplist", "intset", "skiplist", "embstr", "quicklist",
+    "stream", "listpack"};
+
+static void addReplyDatastatsPerType(client *c, long long *values, const char *suffix) {
     addReplyMapLen(c, OBJ_TYPE_MAX);
-    addReplyBulkCString(c, "string_count");
-    addReplyLongLong(c, results->key_count_by_type[OBJ_STRING]);
-    addReplyBulkCString(c, "list_count");
-    addReplyLongLong(c, results->key_count_by_type[OBJ_LIST]);
-    addReplyBulkCString(c, "set_count");
-    addReplyLongLong(c, results->key_count_by_type[OBJ_SET]);
-    addReplyBulkCString(c, "zset_count");
-    addReplyLongLong(c, results->key_count_by_type[OBJ_ZSET]);
-    addReplyBulkCString(c, "hash_count");
-    addReplyLongLong(c, results->key_count_by_type[OBJ_HASH]);
-    addReplyBulkCString(c, "module_count");
-    addReplyLongLong(c, results->key_count_by_type[OBJ_MODULE]);
-    addReplyBulkCString(c, "stream_count");
-    addReplyLongLong(c, results->key_count_by_type[OBJ_STREAM]);
-}
-
-void datastatsEncodingsCommand(client *c) {
-    datasetStats *results = &server.dataset_scan.results;
-    addReplyMapLen(c, OBJ_ENCODING_MAX);
-    addReplyBulkCString(c, "raw");
-    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_RAW]);
-    addReplyBulkCString(c, "int");
-    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_INT]);
-    addReplyBulkCString(c, "hashtable");
-    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_HASHTABLE]);
-    addReplyBulkCString(c, "zipmap");
-    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_ZIPMAP]);
-    addReplyBulkCString(c, "linkedlist");
-    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_LINKEDLIST]);
-    addReplyBulkCString(c, "ziplist");
-    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_ZIPLIST]);
-    addReplyBulkCString(c, "intset");
-    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_INTSET]);
-    addReplyBulkCString(c, "skiplist");
-    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_SKIPLIST]);
-    addReplyBulkCString(c, "embstr");
-    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_EMBSTR]);
-    addReplyBulkCString(c, "quicklist");
-    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_QUICKLIST]);
-    addReplyBulkCString(c, "stream");
-    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_STREAM]);
-    addReplyBulkCString(c, "listpack");
-    addReplyLongLong(c, results->key_count_by_encoding[OBJ_ENCODING_LISTPACK]);
-}
-
-void datastatsMemoryCommand(client *c) {
-    datasetStats *results = &server.dataset_scan.results;
-    addReplyMapLen(c, OBJ_TYPE_MAX);
-    addReplyBulkCString(c, "string_bytes");
-    addReplyLongLong(c, results->memory_by_type[OBJ_STRING]);
-    addReplyBulkCString(c, "list_bytes");
-    addReplyLongLong(c, results->memory_by_type[OBJ_LIST]);
-    addReplyBulkCString(c, "set_bytes");
-    addReplyLongLong(c, results->memory_by_type[OBJ_SET]);
-    addReplyBulkCString(c, "zset_bytes");
-    addReplyLongLong(c, results->memory_by_type[OBJ_ZSET]);
-    addReplyBulkCString(c, "hash_bytes");
-    addReplyLongLong(c, results->memory_by_type[OBJ_HASH]);
-    addReplyBulkCString(c, "module_bytes");
-    addReplyLongLong(c, results->memory_by_type[OBJ_MODULE]);
-    addReplyBulkCString(c, "stream_bytes");
-    addReplyLongLong(c, results->memory_by_type[OBJ_STREAM]);
-}
-
-void datastatsKeysizesCommand(client *c) {
-    datasetStats *results = &server.dataset_scan.results;
-    addReplyMapLen(c, KEYSIZE_HISTOGRAM_BUCKETS);
-    size_t prev = 0;
-    for (int i = 0; i < KEYSIZE_HISTOGRAM_BUCKETS; i++) {
-        char label[32];
-        if (keysize_bucket_boundaries[i] == SIZE_MAX) {
-            snprintf(label, sizeof(label), "%zuB-plus", prev);
-        } else {
-            snprintf(label, sizeof(label), "%zuB-%zuB", prev, keysize_bucket_boundaries[i]);
-        }
+    for (int i = 0; i < OBJ_TYPE_MAX; i++) {
+        char label[64];
+        snprintf(label, sizeof(label), "%s_%s", datastats_type_names[i], suffix);
         addReplyBulkCString(c, label);
-        addReplyLongLong(c, results->key_size_histogram[i]);
-        prev = keysize_bucket_boundaries[i];
+        addReplyLongLong(c, values[i]);
     }
 }
 
-void datastatsValuesizesCommand(client *c) {
-    datasetStats *results = &server.dataset_scan.results;
-    addReplyMapLen(c, VALUESIZE_HISTOGRAM_BUCKETS);
-    size_t prev = 0;
-    for (int i = 0; i < VALUESIZE_HISTOGRAM_BUCKETS; i++) {
-        char label[32];
-        if (valuesize_bucket_boundaries[i] == SIZE_MAX) {
-            snprintf(label, sizeof(label), "%zuB-plus", prev);
-        } else {
-            snprintf(label, sizeof(label), "%zuB-%zuB", prev, valuesize_bucket_boundaries[i]);
-        }
-        addReplyBulkCString(c, label);
-        addReplyLongLong(c, results->value_size_histogram[i]);
-        prev = valuesize_bucket_boundaries[i];
+static void addReplyDatastatsHistogram(client *c, const char **labels, long long *buckets, int num_buckets) {
+    addReplyMapLen(c, num_buckets);
+    for (int i = 0; i < num_buckets; i++) {
+        addReplyBulkCString(c, labels[i]);
+        addReplyLongLong(c, buckets[i]);
     }
-}
-
-void datastatsAllCommand(client *c) {
-    addReplyMapLen(c, 5);
-    addReplyBulkCString(c, "keycounts");
-    datastatsKeycountsCommand(c);
-    addReplyBulkCString(c, "encodings");
-    datastatsEncodingsCommand(c);
-    addReplyBulkCString(c, "memory");
-    datastatsMemoryCommand(c);
-    addReplyBulkCString(c, "keysizes");
-    datastatsKeysizesCommand(c);
-    addReplyBulkCString(c, "valuesizes");
-    datastatsValuesizesCommand(c);
 }
 
 void datastatsCommand(client *c) {
-    if (c->argc == 1) {
-        addReplyErrorArity(c);
-        return;
-    }
+    datasetStats *results = &server.dataset_scan.final_results;
+    const char *sub = objectGetVal(c->argv[1]);
 
-    if (!strcasecmp(objectGetVal(c->argv[1]), "keycounts")) {
-        datastatsKeycountsCommand(c);
-    } else if (!strcasecmp(objectGetVal(c->argv[1]), "encodings")) {
-        datastatsEncodingsCommand(c);
-    } else if (!strcasecmp(objectGetVal(c->argv[1]), "memory")) {
-        datastatsMemoryCommand(c);
-    } else if (!strcasecmp(objectGetVal(c->argv[1]), "keysizes")) {
-        datastatsKeysizesCommand(c);
-    } else if (!strcasecmp(objectGetVal(c->argv[1]), "valuesizes")) {
-        datastatsValuesizesCommand(c);
-    } else if (!strcasecmp(objectGetVal(c->argv[1]), "all")) {
-        datastatsAllCommand(c);
+    if (!strcasecmp(sub, "keycounts")) {
+        addReplyDatastatsPerType(c, results->key_count_by_type, "count");
+    } else if (!strcasecmp(sub, "encodings")) {
+        addReplyMapLen(c, OBJ_ENCODING_MAX);
+        for (int i = 0; i < OBJ_ENCODING_MAX; i++) {
+            addReplyBulkCString(c, datastats_encoding_names[i]);
+            addReplyLongLong(c, results->key_count_by_encoding[i]);
+        }
+    } else if (!strcasecmp(sub, "memory")) {
+        addReplyDatastatsPerType(c, results->memory_by_type, "bytes");
+    } else if (!strcasecmp(sub, "keysizes")) {
+        addReplyDatastatsHistogram(c, keysize_bucket_labels,
+                                   results->key_size_histogram, KEYSIZE_HISTOGRAM_BUCKETS);
+    } else if (!strcasecmp(sub, "valuesizes")) {
+        addReplyDatastatsHistogram(c, valuesize_bucket_labels,
+                                   results->value_size_histogram, VALUESIZE_HISTOGRAM_BUCKETS);
+    } else if (!strcasecmp(sub, "all")) {
+        addReplyMapLen(c, 5);
+        addReplyBulkCString(c, "keycounts");
+        addReplyDatastatsPerType(c, results->key_count_by_type, "count");
+        addReplyBulkCString(c, "encodings");
+        addReplyMapLen(c, OBJ_ENCODING_MAX);
+        for (int i = 0; i < OBJ_ENCODING_MAX; i++) {
+            addReplyBulkCString(c, datastats_encoding_names[i]);
+            addReplyLongLong(c, results->key_count_by_encoding[i]);
+        }
+        addReplyBulkCString(c, "memory");
+        addReplyDatastatsPerType(c, results->memory_by_type, "bytes");
+        addReplyBulkCString(c, "keysizes");
+        addReplyDatastatsHistogram(c, keysize_bucket_labels,
+                                   results->key_size_histogram, KEYSIZE_HISTOGRAM_BUCKETS);
+        addReplyBulkCString(c, "valuesizes");
+        addReplyDatastatsHistogram(c, valuesize_bucket_labels,
+                                   results->value_size_histogram, VALUESIZE_HISTOGRAM_BUCKETS);
     } else {
         addReplySubcommandSyntaxError(c);
     }
@@ -2431,61 +2367,66 @@ unsigned long long dbScan(serverDb *db, unsigned long long cursor, kvstoreScanFu
     return kvstoreScan(db->keys, cursor, -1, -1, scan_cb, NULL, privdata);
 }
 
-typedef struct {
-    datasetStats *stats;
-    int db_id;
-} datasetScanCtx;
-
-static int getKeysizeBucket(size_t len) {
-    for (int i = 0; i < KEYSIZE_HISTOGRAM_BUCKETS; i++) {
-        if (len < keysize_bucket_boundaries[i]) return i;
-    }
-    return KEYSIZE_HISTOGRAM_BUCKETS - 1;
+static inline int ilog2(size_t v) {
+    int r = 0;
+    while (v >>= 1) r++;
+    return r;
 }
 
-static int getValuesizeBucket(size_t len) {
-    for (int i = 0; i < VALUESIZE_HISTOGRAM_BUCKETS; i++) {
-        if (len < valuesize_bucket_boundaries[i]) return i;
-    }
-    return VALUESIZE_HISTOGRAM_BUCKETS - 1;
+/* O(1) bucket lookup via integer log2.
+ * Boundaries must be powers of 2 with uniform spacing in log2 space.
+ * Key buckets:   base=4 (2^4=16),  step=2 → 16, 64, 256, 1024, 4096
+ * Value buckets: base=6 (2^6=64),  step=4 → 64, 1024, 16384, 262144, 4194304
+ */
+static inline int getSizeBucket(size_t len, int base_bits, int step_bits, int num_buckets) {
+    if (len == 0) return 0;
+    int bucket = (ilog2(len) - base_bits + step_bits) / step_bits;
+    if (bucket < 0) return 0;
+    if (bucket >= num_buckets) return num_buckets - 1;
+    return bucket;
 }
 
 /* Callback for the dataset stats cron scan. Collects per-key metrics. */
 static void datasetScanCallback(void *privdata, void *entry, int didx) {
     UNUSED(didx);
-    datasetScanCtx *ctx = (datasetScanCtx *)privdata;
-    datasetStats *stats = ctx->stats;
+    datasetScanState *state = (datasetScanState *)privdata;
+    datasetStats *stats = &state->partial_results;
     robj *val = entry;
-    stats->key_count_by_type[val->type]++;
-    stats->key_count_by_encoding[val->encoding]++;
 
+    /* Compute sizes needed for metrics. */
+    serverAssert(val->hasembkey);
     size_t key_len = sdslen(objectGetKey(val));
-    stats->key_size_histogram[getKeysizeBucket(key_len)]++;
-
     robj keyobj;
     initStaticStringObject(keyobj, objectGetKey(val));
-    size_t val_size = objectComputeSize(&keyobj, val, 5, ctx->db_id);
-    stats->value_size_histogram[getValuesizeBucket(val_size)]++;
+    size_t val_size = objectComputeSize(&keyobj, val, 5, state->db_index);
+
+    /* Update stats counters. */
+    stats->key_count_by_type[val->type]++;
+    stats->key_count_by_encoding[val->encoding]++;
+    stats->key_size_histogram[getSizeBucket(key_len, 4, 2, KEYSIZE_HISTOGRAM_BUCKETS)]++;
+    stats->value_size_histogram[getSizeBucket(val_size, 6, 4, VALUESIZE_HISTOGRAM_BUCKETS)]++;
     stats->memory_by_type[val->type] += val_size + key_len;
 }
 
 #define DATASET_SCAN_TIME_LIMIT_US 1000
 
+/* Incrementally scan the keyspace to collect dataset statistics.
+ * Called once per serverCron tick, scanning for up to DATASET_SCAN_TIME_LIMIT_US
+ * microseconds before yielding. Progresses through all dbs across multiple
+ * ticks; when a full pass completes, partial_results is promoted to
+ * final_results which is what DATASTATS commands read. */
 void datasetScanCron(void) {
     datasetScanState *state = &server.dataset_scan;
 
-    if (!state->in_progress) {
-        state->in_progress = 1;
+    /* Previous pass finished — publish results and reset for next pass. */
+    if (state->db_index >= server.dbnum) {
+        state->final_results = state->partial_results;
         state->cursor = 0;
         state->db_index = 0;
-        memset(&state->partial, 0, sizeof(state->partial));
+        memset(&state->partial_results, 0, sizeof(state->partial_results));
     }
 
-    datasetScanCtx ctx = {
-        .stats = &state->partial,
-        .db_id = state->db_index,
-    };
-
+    /* Scan keys within the time budget for this tick. */
     monotime timer;
     elapsedStart(&timer);
     while (elapsedUs(timer) < DATASET_SCAN_TIME_LIMIT_US &&
@@ -2493,23 +2434,16 @@ void datasetScanCron(void) {
         serverDb *db = server.db[state->db_index];
         if (db == NULL || kvstoreSize(db->keys) == 0) {
             state->db_index++;
-            ctx.db_id = state->db_index;
-            state->cursor = 0;
             continue;
         }
 
         state->cursor = kvstoreScan(db->keys, state->cursor, -1, -1,
-                                    datasetScanCallback, NULL, &ctx);
+                                    datasetScanCallback, NULL, state);
 
+        /* cursor == 0 means this db is fully scanned; advance to next db. */
         if (state->cursor == 0) {
             state->db_index++;
-            ctx.db_id = state->db_index;
         }
-    }
-
-    if (state->db_index >= server.dbnum) {
-        state->results = state->partial;
-        state->in_progress = 0;
     }
 }
 

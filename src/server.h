@@ -770,6 +770,9 @@ typedef struct ValkeyModuleType moduleType;
 #define OBJ_ENCODING_QUICKLIST 9  /* Encoded as linked list of listpacks */
 #define OBJ_ENCODING_STREAM 10    /* Encoded as a radix tree of listpacks */
 #define OBJ_ENCODING_LISTPACK 11  /* Encoded as a listpack */
+/* Total number of encoding types, used to size encoding stats arrays */
+#define OBJ_ENCODING_MAX 12
+
 
 #define OBJ_REFCOUNT_BITS 29
 #define OBJ_SHARED_REFCOUNT ((1 << OBJ_REFCOUNT_BITS) - 1) /* Global object never destroyed. */
@@ -1592,19 +1595,11 @@ struct serverMemOverhead {
     } *db;
 };
 
-#define OBJ_ENCODING_MAX 12
 
 #define KEYSIZE_HISTOGRAM_BUCKETS 6
-static const size_t keysize_bucket_boundaries[KEYSIZE_HISTOGRAM_BUCKETS] = {
-    16, 64, 256, 1024, 4096, SIZE_MAX
-};
-
 #define VALUESIZE_HISTOGRAM_BUCKETS 6
-static const size_t valuesize_bucket_boundaries[VALUESIZE_HISTOGRAM_BUCKETS] = {
-    64, 1024, 16384, 262144, 4194304, SIZE_MAX
-};
 
-/* Dataset statistics collected via periodic cron scan. */
+/* Per-key statistics accumulated during a full keyspace scan. */
 typedef struct datasetStats {
     long long key_count_by_type[OBJ_TYPE_MAX];
     long long key_count_by_encoding[OBJ_ENCODING_MAX];
@@ -1613,12 +1608,15 @@ typedef struct datasetStats {
     long long value_size_histogram[VALUESIZE_HISTOGRAM_BUCKETS];
 } datasetStats;
 
+/* State for the incremental keyspace scan driven by databasesCron().
+ * Each cron tick scans for up to DATASET_SCAN_TIME_LIMIT_US microseconds,
+ * resuming from where it left off. When all dbs are scanned, partial_results
+ * is promoted to final_results and a new pass begins. */
 typedef struct datasetScanState {
-    unsigned long long cursor;
-    int db_index;
-    int in_progress;
-    datasetStats partial;
-    datasetStats results;
+    unsigned long long cursor;    /* kvstoreScan cursor within current db */
+    int db_index;                 /* db currently being scanned */
+    datasetStats partial_results; /* accumulator for the in-progress scan pass */
+    datasetStats final_results;   /* last completed scan, served by DATASTATS command */
 } datasetScanState;
 
 /* Replication error behavior determines the replica behavior
@@ -1915,7 +1913,7 @@ struct valkeyServer {
     long long stat_total_active_defrag_time;       /* Total time memory fragmentation over the limit, unit us */
     monotime stat_last_active_defrag_time;         /* Timestamp of current active defrag start */
     size_t stat_peak_memory;                       /* Max used memory record */
-    datasetScanState dataset_scan;                  /* Cron-driven dataset statistics scan state */
+    datasetScanState dataset_scan;                 /* Cron-driven dataset statistics scan state */
     long long stat_aof_rewrites;                   /* number of aof file rewrites performed */
     long long stat_aofrw_consecutive_failures;     /* The number of consecutive failures of aofrw */
     long long stat_rdb_saves;                      /* number of rdb saves performed */
